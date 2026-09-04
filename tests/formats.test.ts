@@ -7,6 +7,7 @@ import {
   getCodecCompatibility,
   findHighestH264Format,
   findHighestFormat,
+  compareVideoFormats,
   checkH264ResolutionCapped,
   PREMIERE_READY_SELECTOR,
 } from "../src/utils/formats.ts";
@@ -142,4 +143,88 @@ test("checkH264ResolutionCapped accurately flags 4K AV1 capping", () => {
 test("PREMIERE_READY_SELECTOR has correct yt-dlp format strategy", () => {
   assert.ok(PREMIERE_READY_SELECTOR.includes("vcodec^=avc1"));
   assert.ok(PREMIERE_READY_SELECTOR.includes("acodec^=mp4a"));
+});
+
+test("compareVideoFormats prefers known filesize and higher quality over unknown size", () => {
+  // Scenario matching user's case: Format #270 (Unknown size) vs Format #137 (45.7 MB)
+  const format270: VideoFormat = {
+    format_id: "270",
+    vcodec: "avc1.640028",
+    acodec: "none",
+    ext: "mp4",
+    height: 1080,
+    width: 1920,
+    fps: 25,
+    resolution: "1920x1080",
+    filesize: null,
+    filesize_approx: null,
+    format_note: "1080p25",
+    tbr: null,
+    abr: null,
+  };
+
+  const format137: VideoFormat = {
+    format_id: "137",
+    vcodec: "avc1.640028",
+    acodec: "none",
+    ext: "mp4",
+    height: 1080,
+    width: 1920,
+    fps: 25,
+    resolution: "1920x1080",
+    filesize: 47919920, // 45.7 MB
+    filesize_approx: null,
+    format_note: "1080p25",
+    tbr: 2500,
+    abr: null,
+  };
+
+  const format271: VideoFormat = {
+    format_id: "271",
+    vcodec: "vp09.00.51.08",
+    acodec: "none",
+    ext: "webm",
+    height: 1440,
+    width: 2560,
+    fps: 25,
+    resolution: "2560x1440",
+    filesize: 89653248, // 85.5 MB
+    filesize_approx: null,
+    format_note: "1440p25",
+    tbr: 4500,
+    abr: null,
+  };
+
+  const format248: VideoFormat = {
+    format_id: "248",
+    vcodec: "vp09.00.51.08",
+    acodec: "none",
+    ext: "webm",
+    height: 1080,
+    width: 1920,
+    fps: 25,
+    resolution: "1920x1080",
+    filesize: 32400998, // 30.9 MB
+    filesize_approx: null,
+    format_note: "1080p25",
+    tbr: 1800,
+    abr: null,
+  };
+
+  // 1. When comparing 137 and 270: 137 (known size 45.7MB) must rank higher than 270 (unknown size)
+  const diff = compareVideoFormats(format270, format137);
+  assert.ok(diff > 0, "Format with known filesize must rank before unknown size");
+
+  // 2. Sorting array containing both: 137 must be first among 1080p H.264
+  const list = [format270, format137].sort(compareVideoFormats);
+  assert.equal(list[0].format_id, "137");
+  assert.equal(list[1].format_id, "270");
+
+  // 3. findHighestH264Format must choose #137 over #270
+  const highestH264 = findHighestH264Format([format271, format270, format137, format248]);
+  assert.equal(highestH264?.format_id, "137");
+
+  // 4. At 1080p, Premiere-ready H.264 (#137) ranks before VP9 (#248)
+  const sorted1080 = [format248, format137].sort(compareVideoFormats);
+  assert.equal(sorted1080[0].format_id, "137");
 });

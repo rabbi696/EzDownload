@@ -69,15 +69,63 @@ export const getCodecCompatibility = (
   return "unknown";
 };
 
+/**
+ * 视频格式排序：
+ * 1. 分辨率 (height) 降序
+ * 2. 宽度 (width) 降序
+ * 3. 帧率 (fps) 降序
+ * 4. Premiere Ready 格式优先 (H.264/ProRes 且非 webm)
+ * 5. 已知大小优先 (filesize/filesize_approx > 0 排在未知大小前面，避免选到低码率 Unknown size 格式)
+ * 6. 大小/码率降序 (已知大文件/高码率优先)
+ */
+export const compareVideoFormats = (a: VideoFormat, b: VideoFormat): number => {
+  // 1. 分辨率高度降序
+  const heightA = a.height || 0;
+  const heightB = b.height || 0;
+  if (heightB !== heightA) return heightB - heightA;
+
+  // 2. 分辨率宽度降序
+  const widthA = a.width || 0;
+  const widthB = b.width || 0;
+  if (widthB !== widthA) return widthB - widthA;
+
+  // 3. 帧率降序
+  const fpsA = a.fps || 0;
+  const fpsB = b.fps || 0;
+  if (fpsB !== fpsA) return fpsB - fpsA;
+
+  // 4. Premiere Ready 兼容优先 (avc1/prores mp4 优先于 vp9/av1 webm)
+  const isReadyA = isPremiereReadyCodec(a.vcodec, a.ext) ? 1 : 0;
+  const isReadyB = isPremiereReadyCodec(b.vcodec, b.ext) ? 1 : 0;
+  if (isReadyB !== isReadyA) return isReadyB - isReadyA;
+
+  // 5. 已知大小优先于未知大小 (例如优先选择明确有 45.7MB 的 #137，而非 Unknown size 的 #270)
+  const sizeA = a.filesize || a.filesize_approx || 0;
+  const sizeB = b.filesize || b.filesize_approx || 0;
+  const hasSizeA = sizeA > 0 ? 1 : 0;
+  const hasSizeB = sizeB > 0 ? 1 : 0;
+  if (hasSizeB !== hasSizeA) return hasSizeB - hasSizeA;
+
+  // 6. 文件大小降序（同等分辨率下，体积大往往代表更高质量/码率流）
+  if (sizeB !== sizeA) return sizeB - sizeA;
+
+  // 7. 总码率降序
+  const tbrA = a.tbr || 0;
+  const tbrB = b.tbr || 0;
+  if (tbrB !== tbrA) return tbrB - tbrA;
+
+  return 0;
+};
+
 export const findHighestH264Format = (formats: VideoFormat[]): VideoFormat | undefined => {
   const h264List = formats.filter(
     (f) => getCodecKey(f.vcodec) === "h264" && !f.ext.toLowerCase().includes("webm"),
   );
-  return h264List.sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+  return [...h264List].sort(compareVideoFormats)[0];
 };
 
 export const findHighestFormat = (formats: VideoFormat[]): VideoFormat | undefined => {
-  return [...formats].sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+  return [...formats].sort(compareVideoFormats)[0];
 };
 
 export const checkH264ResolutionCapped = (formats: VideoFormat[]) => {

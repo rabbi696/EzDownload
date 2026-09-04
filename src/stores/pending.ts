@@ -1,20 +1,21 @@
 import { defineStore } from "pinia";
 import { useSettingStore } from "@/stores/setting";
-import { getCodecKey } from "@/utils/formats";
+import { getCodecKey, compareVideoFormats } from "@/utils/formats";
 import type { FetchedVideoData, PendingItem, VideoFormat } from "@/types";
 
 const generateId = () => `pd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-const selectVideoFormat = (
+export const selectVideoFormat = (
   formats: VideoFormat[],
   maxHeight?: number,
   preferH264 = false,
 ): string => {
+  const sorted = [...formats].sort(compareVideoFormats);
   if (preferH264) {
-    const h264List = formats.filter(
+    const h264List = sorted.filter(
       (f) => getCodecKey(f.vcodec) === "h264" && !f.ext.toLowerCase().includes("webm"),
     );
-    const targetList = h264List.length > 0 ? h264List : formats;
+    const targetList = h264List.length > 0 ? h264List : sorted;
     if (!maxHeight) return targetList[0]?.format_id ?? "";
     return (
       targetList.find((format) => format.height != null && format.height <= maxHeight)
@@ -23,10 +24,10 @@ const selectVideoFormat = (
       ""
     );
   }
-  if (!maxHeight) return formats[0]?.format_id ?? "";
+  if (!maxHeight) return sorted[0]?.format_id ?? "";
   return (
-    formats.find((format) => format.height != null && format.height <= maxHeight)?.format_id ??
-    formats[0]?.format_id ??
+    sorted.find((format) => format.height != null && format.height <= maxHeight)?.format_id ??
+    sorted[0]?.format_id ??
     ""
   );
 };
@@ -117,8 +118,10 @@ export const usePendingStore = defineStore("pending", () => {
     item.isPlaylist = data.isPlaylist;
     item.playlistEntries = data.playlistEntries;
     item.selectedPlaylistItems = data.isPlaylist ? data.playlistEntries.map((_, i) => i + 1) : [];
-    item.selectedVideoFormat = data.videoFormats[0]?.format_id ?? "";
-    item.selectedAudioFormat = data.audioFormats[0]?.format_id ?? "";
+    const settingStore = useSettingStore();
+    const premierePreset = settingStore.premierePresetDefault;
+    item.selectedVideoFormat = selectVideoFormat(data.videoFormats, undefined, premierePreset);
+    item.selectedAudioFormat = selectAudioFormat(data.audioFormats, premierePreset);
   };
 
   const clear = () => {
