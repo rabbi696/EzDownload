@@ -6,6 +6,9 @@ use tauri::AppHandle;
 use super::model::DownloadParams;
 
 pub(super) fn requires_ffmpeg_merge(params: &DownloadParams) -> bool {
+    if params.premiere_preset {
+        return true;
+    }
     params.download_mode == "default"
         && params
             .video_format
@@ -22,6 +25,23 @@ pub(super) fn requires_ffmpeg_merge(params: &DownloadParams) -> bool {
 /// `no_merge` 为 true 时不使用 `+` 拼接，避免触发 ffmpeg 合并
 /// （yt-dlp 无 --no-merge-output 选项，用单独格式替代）。
 fn build_format_args(params: &DownloadParams) -> Vec<String> {
+    if params.premiere_preset {
+        let vf = params.video_format.as_deref().filter(|s| !s.is_empty());
+        let af = params.audio_format.as_deref().filter(|s| !s.is_empty());
+        let selector = match (vf, af) {
+            (Some(v), Some(a)) => format!("{}+{}", v, a),
+            (Some(v), None) => format!("{}+ba[acodec^=mp4a]/b", v),
+            _ => "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/b[vcodec^=avc1]".to_string(),
+        };
+        return vec![
+            "-f".to_string(),
+            selector,
+            "--merge-output-format".to_string(),
+            "mp4".to_string(),
+            "--remux-video".to_string(),
+            "mp4".to_string(),
+        ];
+    }
     match params.download_mode.as_str() {
         "video" => {
             if let Some(ref vf) = params.video_format {
@@ -70,11 +90,53 @@ fn build_format_args(params: &DownloadParams) -> Vec<String> {
     }
 }
 
+pub fn validate_safe_arguments(params: &DownloadParams) -> Result<(), String> {
+    const DANGEROUS_TOKENS: &[&str] = &[
+        "--exec",
+        "--exec-before-download",
+        "--exec-after-download",
+        "--config-location",
+        "--load-info-json",
+        "--external-downloader",
+        "--external-downloader-args",
+        "--alias",
+        ";",
+        "&&",
+        "||",
+        "|",
+        "`",
+        "$(",
+    ];
+
+    if let Some(ref args) = params.ffmpeg_args {
+        let lower = args.to_lowercase();
+        for token in DANGEROUS_TOKENS {
+            if lower.contains(token) {
+                return Err(format!("err_unsafe_argument:{}", token));
+            }
+        }
+    }
+
+    if let Some(ref tmpl) = params.output_template {
+        let lower = tmpl.to_lowercase();
+        for token in DANGEROUS_TOKENS {
+            if lower.contains(token) {
+                return Err(format!("err_unsafe_template:{}", token));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// 构建 yt-dlp 下载参数
 pub(super) fn build_download_args(
     app: &AppHandle,
     params: &DownloadParams,
+    temp_dir: &std::path::Path,
 ) -> Result<Vec<String>, String> {
+    validate_safe_arguments(params)?;
+
     let mut args: Vec<String> = vec![
         "--newline".to_string(),
         "--ignore-config".to_string(),  // 忽略用户系统配置，防止干扰 GUI
@@ -109,16 +171,16 @@ pub(super) fn build_download_args(
         }
     }
 
-    // 输出路径模板
+    // 确保临时输出目录存在
+    let _ = std::fs::create_dir_all(temp_dir);
+
+    // 输出路径模板（输出到任务专属临时目录中，校验成功后原子移动到目标目录）
     let template = params
         .output_template
         .as_deref()
         .filter(|s| !s.is_empty())
         .unwrap_or("%(title).200s.%(ext)s");
-    let output_template = std::path::PathBuf::from(&params.download_dir)
-        .join(template)
-        .to_string_lossy()
-        .to_string();
+    let output_template = temp_dir.join(template).to_string_lossy().to_string();
     args.push("-o".to_string());
     args.push(output_template);
     args.push("--windows-filenames".to_string());
@@ -343,6 +405,7 @@ mod ffmpeg_requirement_tests {
             no_playlist: false,
             playlist_items: None,
             live_from_start: false,
+            premiere_preset: false,
         }
     }
 
@@ -370,5 +433,42 @@ mod ffmpeg_requirement_tests {
     fn merge_mode_uses_plus_concatenation() {
         let args = build_format_args(&params());
         assert_eq!(args, ["-f", "137+140"]);
+    }
+
+    #[test]
+    fn premiere_preset_generates_mp4_avc1_strategy() {
+        let mut value = params();
+        value.premiere_preset = true;
+        value.video_format = None;
+        value.audio_format = None;
+        let args = build_format_args(&value);
+        assert_eq!(
+            args,
+            [
+                "-f",
+                "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/b[vcodec^=avc1]",
+                "--merge-output-format",
+                "mp4",
+                "--remux-video",
+                "mp4"
+            ]
+        );
+        assert!(requires_ffmpeg_merge(&value));
+    }
+
+    #[test]
+    fn validate_safe_arguments_rejects_dangerous_flags() {
+        let mut p = params();
+        p.ffmpeg_args = Some("-vf scale=1280:720 --exec 'rm -rf /'".to_string());
+        assert!(super::validate_safe_arguments(&p).is_err());
+
+        let mut p2 = params();
+        p2.output_template = Some("%(title)s; cat /etc/passwd".to_string());
+        assert!(super::validate_safe_arguments(&p2).is_err());
+
+        let mut safe_p = params();
+        safe_p.ffmpeg_args = Some("-c:v libx264 -crf 20".to_string());
+        safe_p.output_template = Some("%(title).100s.%(ext)s".to_string());
+        assert!(super::validate_safe_arguments(&safe_p).is_ok());
     }
 }

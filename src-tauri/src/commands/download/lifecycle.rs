@@ -1,14 +1,12 @@
-//! 下载子进程的创建与生命周期启动。
-
-use crate::utils;
 #[cfg(target_os = "windows")]
 use crate::commands::CREATE_NO_WINDOW;
+use crate::utils;
 use std::process::Stdio;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use super::{
     arguments::{build_download_args, requires_ffmpeg_merge},
-    model::{DownloadParams, DownloadProcessInfo, DownloadState},
+    model::{DownloadParams, DownloadProcessInfo, DownloadState, ExecutionState},
     output::{spawn_completion_handler, spawn_output_reader},
 };
 
@@ -29,15 +27,15 @@ pub async fn start_download(
         return Err("err_ffmpeg_required_for_merge".to_string());
     }
 
-    let args = build_download_args(&app, &params)?;
+    let download_dir_path = std::path::PathBuf::from(&params.download_dir);
+    let temp_job_dir = download_dir_path.join(format!(".ezdownload_tmp_{}", params.id));
+    std::fs::create_dir_all(&temp_job_dir).map_err(|e| format!("err_create_temp_dir:{}", e))?;
 
-    // 生成临时文件路径，用于 --print-to-file 输出最终文件路径
-    let app_data = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("err_app_data_dir:{}", e))?;
-    let filepath_file = app_data
-        .join(format!("{}_filepath.txt", params.id))
+    let args = build_download_args(&app, &params, &temp_job_dir)?;
+
+    // 生成任务专属临时目录中的文件路径，用于 --print-to-file 输出最终文件路径
+    let filepath_file = temp_job_dir
+        .join("filepath.txt")
         .to_string_lossy()
         .to_string();
 
@@ -55,6 +53,11 @@ pub async fn start_download(
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.as_std_mut().process_group(0);
+    }
 
     let mut child = cmd
         .spawn()
@@ -78,12 +81,16 @@ pub async fn start_download(
             task_id.clone(),
             DownloadProcessInfo {
                 pid,
+                state: ExecutionState::Running,
                 cancelled: false,
                 output_files: Vec::new(),
                 download_dir: params.download_dir.clone(),
+                temp_dir: temp_job_dir,
                 filepath_file: Some(filepath_file),
                 clip_duration,
                 last_error: None,
+                premiere_preset: params.premiere_preset,
+                no_overwrites: params.no_overwrites,
             },
         );
     }

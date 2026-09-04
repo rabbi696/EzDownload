@@ -53,6 +53,12 @@ const notifyModeOptions = computed(() => [
   { label: t("settings.all"), value: "all" },
 ]);
 
+const autoConvertOptions = computed(() => [
+  { label: t("premiere.autoConvertOff"), value: "off" },
+  { label: t("premiere.targetH264"), value: "h264_mp4" },
+  { label: t("premiere.targetProres"), value: "prores_422_lt_mov" },
+]);
+
 const applyYoutubeExtractorArgs = async () => {
   await invoke("set_youtube_extractor_args", {
     poToken: settingStore.youtubePoToken,
@@ -241,6 +247,37 @@ watch(
       </n-flex>
     </n-card>
 
+    <n-card :title="$t('premiere.presetTitle')" size="small" class="section-card">
+      <n-flex vertical :size="12">
+        <n-text depth="3" style="font-size: 13px">
+          {{ $t("premiere.presetDesc") }}
+        </n-text>
+        <div class="info-list">
+          <div class="info-row">
+            <span class="info-label">{{ $t("premiere.presetTitle") }}</span>
+            <n-switch v-model:value="settingStore.premierePresetDefault" />
+          </div>
+          <div class="info-row">
+            <span class="info-label">{{ $t("premiere.autoConvertSetting") }}</span>
+            <n-select
+              v-model:value="settingStore.autoConvertIncompatible"
+              :options="autoConvertOptions"
+              size="small"
+              style="width: 220px"
+            />
+          </div>
+          <div class="info-row">
+            <span class="info-label">{{ $t("premiere.keepOriginalSetting") }}</span>
+            <n-switch v-model:value="settingStore.keepOriginalAfterConversion" />
+          </div>
+          <div class="info-row">
+            <span class="info-label">{{ $t("premiere.hardwareAccelSetting") }}</span>
+            <n-switch v-model:value="settingStore.useHardwareAcceleration" />
+          </div>
+        </div>
+      </n-flex>
+    </n-card>
+
     <n-card :title="$t('settings.about')" size="small" class="section-card">
       <template #header-extra>
         <n-button
@@ -273,15 +310,27 @@ watch(
           </div>
           <div class="info-row">
             <span class="info-label">{{ $t("settings.repository") }}</span>
-            <n-button
-              text
-              tag="a"
-              href="https://github.com/imsyy/yt-dlp-gui"
-              target="_blank"
-              size="tiny"
-            >
-              GitHub
-            </n-button>
+            <n-flex :size="6" align="center">
+              <n-button
+                text
+                tag="a"
+                href="https://github.com/rabbi696/EzDownload"
+                target="_blank"
+                size="tiny"
+              >
+                EzDownload
+              </n-button>
+              <n-text depth="3">·</n-text>
+              <n-button
+                text
+                tag="a"
+                href="https://github.com/imsyy/yt-dlp-gui"
+                target="_blank"
+                size="tiny"
+              >
+                Upstream (imsyy)
+              </n-button>
+            </n-flex>
           </div>
         </div>
       </n-flex>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useSettingStore } from "@/stores/setting";
 import { DEFAULT_OUTPUT_TEMPLATE } from "@/utils/output-template";
+import { validateSafeArguments } from "@/utils/security";
 import { useI18n } from "vue-i18n";
 import type { VideoInfo } from "@/types";
 
@@ -145,6 +146,8 @@ watch(endTime, (val) => {
     window.$message.warning(t("detail.endTimeAdjusted"));
   }
 });
+
+const ffmpegArgsValidation = computed(() => validateSafeArguments(ffmpegArgs.value));
 </script>
 
 <template>
@@ -259,15 +262,21 @@ watch(endTime, (val) => {
         </n-flex>
       </n-flex>
 
-      <n-flex align="center" :size="8">
-        <span class="option-label">{{ $t("detail.ffmpegArgs") }}</span>
-        <n-input
-          v-model:value="ffmpegArgs"
-          :placeholder="$t('detail.ffmpegArgsPlaceholder')"
-          size="small"
-          clearable
-          style="flex: 1"
-        />
+      <n-flex vertical :size="4">
+        <n-flex align="center" :size="8">
+          <span class="option-label">{{ $t("detail.ffmpegArgs") }}</span>
+          <n-input
+            v-model:value="ffmpegArgs"
+            :status="ffmpegArgsValidation.valid ? undefined : 'error'"
+            :placeholder="$t('detail.ffmpegArgsPlaceholder')"
+            size="small"
+            clearable
+            style="flex: 1"
+          />
+        </n-flex>
+        <n-text v-if="!ffmpegArgsValidation.valid" type="error" style="font-size: 11px; margin-left: 64px">
+          {{ $t("premiere.unsafeArgumentBlocked", { token: ffmpegArgsValidation.blockedToken }) }}
+        </n-text>
       </n-flex>
 
       <n-flex align="center" :size="8">

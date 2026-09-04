@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-yt-dlp-gui is a desktop application for downloading videos via yt-dlp. Built with **Tauri 2** (Rust backend) + **Vue 3** (TypeScript frontend). The UI is in Chinese.
+**EzDownload** is a desktop application for downloading videos via yt-dlp, optimized for **Adobe Premiere Pro** compatibility and Apple Silicon / cross-platform desktop use. Built with **Tauri 2** (Rust backend) + **Vue 3** (TypeScript frontend). Forked from and attributing `imsyy/yt-dlp-gui`.
 
 ## Development Commands
 
@@ -12,12 +12,15 @@ yt-dlp-gui is a desktop application for downloading videos via yt-dlp. Built wit
 pnpm install          # Install frontend dependencies
 pnpm tauri dev        # Run the full app in development (starts Vite + Rust backend)
 pnpm dev              # Run frontend only (Vite dev server on port 5688)
+pnpm test             # Run frontend unit tests (node:test)
+pnpm typecheck        # Type-check frontend with vue-tsc
 pnpm build            # Type-check and build frontend (vue-tsc + vite build)
 pnpm tauri build      # Build production app bundle
 ```
 
-Rust backend builds are handled by Tauri automatically during `pnpm tauri dev` / `pnpm tauri build`. To check Rust code independently:
+Rust backend builds are handled by Tauri automatically during `pnpm tauri dev` / `pnpm tauri build`. To test or check Rust code independently:
 ```bash
+cd src-tauri && cargo test
 cd src-tauri && cargo check
 ```
 
@@ -29,19 +32,20 @@ cd src-tauri && cargo check
 - **Auto-imports** configured in `vite.config.ts`: Vue, Vue Router, VueUse APIs, and Naive UI composables are available without explicit imports
 - **Pinia** for state with `pinia-plugin-persistedstate` for localStorage persistence
 - **Path alias**: `@` maps to `src/`
-- **Pages**: Home (video search/download UI), Downloads, Settings
+- **Pages**: Home (URL search/batch parse), Pending (format selection & Premiere preset), Downloads (progress, verified badges, transcode actions), Settings (options, Premiere defaults, tools)
+- **Premiere Utilities**: `src/utils/formats.ts` classifies H.264/ProRes vs AV1/VP9/WebM, detects 4K resolution capping, and builds Premiere Ready selector strategies
 - **Tauri IPC**: Frontend calls Rust commands via `invoke()` from `@tauri-apps/api/core`
 
 ### Backend (`src-tauri/src/`)
 - `lib.rs` — Tauri app builder, registers all commands and plugins
-- `commands/` — Tauri command handlers,按功能域拆分:
-  - `mod.rs` — shared types (DownloadState, DownloadParams, YtdlpStatus etc.)
+- `commands/` — Tauri command handlers:
+  - `probe.rs` — ffprobe JSON stream analysis, Premiere Pro compatibility verification
+  - `transcode.rs` — FFmpeg conversion to H.264 MP4 (`libx264`/`h264_videotoolbox`) and Apple ProRes 422 LT MOV (`prores_ks`), emitting progress and canceling safely
+  - `download/` — yt-dlp download process lifecycle, format argument construction (`--remux-video mp4` / Premiere presets), process tree cleanup, output verification
   - `setup.rs` — platform info, yt-dlp/Deno installation management
   - `video.rs` — video info fetching (`-J`), cookie management
-  - `download.rs` — download task control (start/pause/resume/cancel/check_files_exist)
-- `parser.rs` — yt-dlp `--progress-template` JSON output parsing
-- `process.rs` — OS-level process control (suspend/resume/kill via Win32 API or signals)
-- `utils.rs` — Path helpers (yt-dlp, Deno, cookie paths in app data dir), platform-specific download URLs, JS runtime args builder
+- `platform/process.rs` — OS-level process control (Unix `pkill -P <pid>` tree kill preventing orphaned ffmpeg processes)
+- `utils.rs` — Path helpers (yt-dlp, FFmpeg, FFprobe, Deno)
 - Binaries (yt-dlp, Deno) are downloaded to the Tauri app data directory at runtime, not bundled
 - Progress events emitted to frontend via `app.emit()` (e.g., `ytdlp-download-progress`, `deno-download-progress`)
 - Download progress uses `--progress-template` (structured JSON) instead of parsing stdout text

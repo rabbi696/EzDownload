@@ -1,11 +1,11 @@
 //! 工具箱命令共用的 yt-dlp 执行器。
 
+#[cfg(target_os = "windows")]
+use crate::commands::CREATE_NO_WINDOW;
 use crate::{
     commands::{support::append_cookie_proxy_args, support::extract_ytdlp_error},
     utils,
 };
-#[cfg(target_os = "windows")]
-use crate::commands::CREATE_NO_WINDOW;
 use tauri::AppHandle;
 
 /// 通用工具命令执行器（--skip-download 模式，不下载视频本身）
@@ -57,6 +57,11 @@ pub(super) async fn run_ytdlp_tool(
         .env("PYTHONIOENCODING", "utf-8");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.as_std_mut().process_group(0);
+    }
 
     let output = cmd
         .output()

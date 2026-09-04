@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import { composeOutputTemplate } from "@/utils/output-template";
+import { validateSafeArguments } from "@/utils/security";
+import { getCodecCompatibility } from "@/utils/formats";
 import { useDownloadStore } from "@/stores/download";
 import { useSettingStore } from "@/stores/setting";
 import { useStatusStore } from "@/stores/status";
@@ -38,6 +40,9 @@ export const useDownloadLauncher = () => {
 
   const buildFormatLabel = (item: PendingItem): string => {
     const parts: string[] = [];
+    if (item.premierePreset) {
+      parts.push(t("detail.premiereReadyPresetBadge"));
+    }
     if (item.downloadMode === "audio") {
       parts.push(t("detail.audioOnly"));
       const audio = item.audioFormats.find(
@@ -130,10 +135,11 @@ export const useDownloadLauncher = () => {
     }
 
     const requiresFfmpegMerge =
-      item.downloadMode === "default" &&
-      Boolean(item.selectedVideoFormat) &&
-      Boolean(item.selectedAudioFormat) &&
-      !item.noMerge;
+      item.premierePreset ||
+      (item.downloadMode === "default" &&
+        Boolean(item.selectedVideoFormat) &&
+        Boolean(item.selectedAudioFormat) &&
+        !item.noMerge);
     if (requiresFfmpegMerge) {
       try {
         const status = await invoke<FfmpegStatus>("get_ffmpeg_status");
@@ -146,6 +152,66 @@ export const useDownloadLauncher = () => {
         statusStore.showFfmpegSetupModal = true;
         if (preparingTaskId) markPreparationError(preparingTaskId);
         return "missing-ffmpeg";
+      }
+    }
+
+    const ffmpegValidation = validateSafeArguments(item.ffmpegArgs);
+    if (!ffmpegValidation.valid) {
+      window.$message.error(
+        t("premiere.unsafeArgumentBlocked", { token: ffmpegValidation.blockedToken }),
+      );
+      if (preparingTaskId) markPreparationError(preparingTaskId);
+      return "failed";
+    }
+
+    const templateOutput = composeOutputTemplate(
+      settingStore.outputTemplate,
+      settingStore.filenamePrefix,
+      settingStore.filenameSuffix,
+    );
+    const templateValidation = validateSafeArguments(templateOutput);
+    if (!templateValidation.valid) {
+      window.$message.error(
+        t("premiere.unsafeArgumentBlocked", { token: templateValidation.blockedToken }),
+      );
+      if (preparingTaskId) markPreparationError(preparingTaskId);
+      return "failed";
+    }
+
+    if (item.premierePreset && item.downloadMode !== "audio") {
+      const selectedVideo = item.videoFormats.find(
+        (f) => f.format_id === item.selectedVideoFormat,
+      );
+      const isCompat = selectedVideo
+        ? getCodecCompatibility(selectedVideo.vcodec, selectedVideo.ext)
+        : "ready";
+      if (
+        isCompat === "convert_recommended" &&
+        (!item.autoConvertTarget || item.autoConvertTarget === "off")
+      ) {
+        const choice = await new Promise<"h264_mp4" | "prores_422_lt_mov" | null>((resolve) => {
+          window.$dialog.warning({
+            title: t("premiere.fallbackChoiceTitle"),
+            content: t("premiere.fallbackChoiceDesc", {
+              codec: selectedVideo?.vcodec || "VP9/AV1",
+              ext: selectedVideo?.ext || "WebM",
+            }),
+            positiveText: t("premiere.autoConvertH264"),
+            negativeText: t("premiere.autoConvertProres"),
+            closable: true,
+            onPositiveClick: () => resolve("h264_mp4"),
+            onNegativeClick: () => resolve("prores_422_lt_mov"),
+            onClose: () => resolve(null),
+            onMaskClick: () => resolve(null),
+          });
+        });
+
+        if (!choice) {
+          window.$message.warning(t("premiere.fallbackChoiceRequired"));
+          if (preparingTaskId) markPreparationError(preparingTaskId);
+          return "failed";
+        }
+        item.autoConvertTarget = choice;
       }
     }
 
@@ -182,6 +248,8 @@ export const useDownloadLauncher = () => {
       startTime: item.startTime != null ? timeToSeconds(item.startTime) : null,
       endTime: item.endTime != null ? timeToSeconds(item.endTime) : null,
       liveFromStart: item.liveFromStart,
+      premierePreset: item.premierePreset,
+      autoConvertTarget: item.autoConvertTarget || settingStore.autoConvertIncompatible,
       noPlaylist: item.isPlaylist && item.selectedPlaylistItems.length === 1,
       playlistItems:
         item.isPlaylist && item.selectedPlaylistItems.length > 0

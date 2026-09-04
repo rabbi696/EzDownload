@@ -92,6 +92,18 @@ export const useSettingStore = defineStore(
     /** 在任务栏显示下载进度 */
     const showTaskbarProgress = ref(true);
 
+    /** 默认使用 Premiere Ready (H.264 MP4) 预设 */
+    const premierePresetDefault = ref(true);
+
+    /** 下载不兼容格式时自动转换行为: off | h264_mp4 | prores_422_lt_mov */
+    const autoConvertIncompatible = ref<"off" | "h264_mp4" | "prores_422_lt_mov">("off");
+
+    /** 转换成功后是否保留原始下载文件 */
+    const keepOriginalAfterConversion = ref(true);
+
+    /** 使用硬件加速转码 (macOS VideoToolbox) */
+    const useHardwareAcceleration = ref(true);
+
     return {
       locale,
       themeMode,
@@ -129,6 +141,10 @@ export const useSettingStore = defineStore(
       youtubePoToken,
       youtubeVisitorData,
       showTaskbarProgress,
+      premierePresetDefault,
+      autoConvertIncompatible,
+      keepOriginalAfterConversion,
+      useHardwareAcceleration,
     };
   },
   {

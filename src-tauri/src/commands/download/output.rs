@@ -184,6 +184,36 @@ pub(super) fn spawn_output_reader<R: tokio::io::AsyncRead + Unpin + Send + 'stat
     });
 }
 
+/// 将文件原子移动到目标位置（若跨卷则复制后删除源文件）
+pub(crate) fn atomic_move(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    if std::fs::rename(src, dst).is_ok() {
+        return Ok(());
+    }
+    std::fs::copy(src, dst)?;
+    let _ = std::fs::remove_file(src);
+    Ok(())
+}
+
+/// 在临时任务目录中查找下载输出文件（排除 .part, .ytdl 及 filepath.txt）
+fn find_downloaded_file_in_dir(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                    if !name.ends_with(".part")
+                        && !name.ends_with(".ytdl")
+                        && name != "filepath.txt"
+                    {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// 启动异步任务等待子进程完成并发送结果事件
 pub(super) fn spawn_completion_handler(
     app: AppHandle,
@@ -194,35 +224,151 @@ pub(super) fn spawn_completion_handler(
     tokio::spawn(async move {
         let status = child.wait().await;
 
-        let was_cancelled = processes
-            .lock()
-            .ok()
-            .and_then(|map| map.get(&task_id).map(|info| info.cancelled))
-            .unwrap_or(false);
+        let info_opt = processes.lock().ok().and_then(|map| {
+            map.get(&task_id).map(|info| {
+                (
+                    info.cancelled,
+                    info.temp_dir.clone(),
+                    info.download_dir.clone(),
+                    info.no_overwrites,
+                    info.last_error.clone(),
+                )
+            })
+        });
+
+        let (was_cancelled, temp_dir, download_dir, no_overwrites, last_error) = match info_opt {
+            Some(data) => (data.0, Some(data.1), Some(data.2), data.3, data.4),
+            None => (false, None, None, false, None),
+        };
 
         // 仅以 yt-dlp 退出码判定成功；不能用「日志里见过 Destination 行」做兜底，
         // 因为 yt-dlp 在开始写字节前就会先打印目标路径，下载半路超时也会留下这一行。
-        let success = matches!(&status, Ok(s) if s.success());
+        let success = matches!(&status, Ok(s) if s.success()) && !was_cancelled;
 
         if success {
-            let (output_file, _) = resolve_output_file(&processes, &task_id);
-            let _ = app.emit(
-                "download-complete",
-                serde_json::json!({ "id": task_id, "outputFile": output_file }),
-            );
-        } else if !was_cancelled {
-            // 失败时仍清理 --print-to-file 临时文件，避免遗留
+            let (temp_output_file, _) = resolve_output_file(&processes, &task_id);
+            let temp_path = std::path::PathBuf::from(&temp_output_file);
+
+            let actual_temp_path = if temp_path.exists() && temp_path.is_file() {
+                Some(temp_path)
+            } else if let Some(ref tdir) = temp_dir {
+                find_downloaded_file_in_dir(tdir)
+            } else {
+                None
+            };
+
+            if let Some(src_path) = actual_temp_path {
+                // 下载完成后进行 ffprobe 校验
+                let probe_result = crate::commands::probe::verify_media_file(
+                    app.clone(),
+                    src_path.to_string_lossy().to_string(),
+                )
+                .await;
+
+                match probe_result {
+                    Ok(probe) => {
+                        let target_dir = download_dir
+                            .map(std::path::PathBuf::from)
+                            .unwrap_or_else(|| src_path.parent().unwrap().to_path_buf());
+                        let file_name = src_path.file_name().unwrap();
+                        let dest_path = target_dir.join(file_name);
+
+                        // 若设置了不覆盖且目标文件已存在
+                        if no_overwrites && dest_path.exists() {
+                            if let Some(ref tdir) = temp_dir {
+                                let _ = std::fs::remove_dir_all(tdir);
+                            }
+                            let _ = app.emit(
+                                "download-error",
+                                serde_json::json!({
+                                    "id": task_id,
+                                    "error": format!("err_file_already_exists:{}", dest_path.to_string_lossy()),
+                                }),
+                            );
+                        } else {
+                            // 从隔离临时目录原子移动到目标下载目录
+                            match atomic_move(&src_path, &dest_path) {
+                                Ok(()) => {
+                                    if let Some(ref tdir) = temp_dir {
+                                        if super::control::is_valid_job_temp_dir(tdir, &task_id) {
+                                            let _ = std::fs::remove_dir_all(tdir);
+                                        }
+                                    }
+
+                                    if let Ok(mut map) = processes.lock() {
+                                        if let Some(info) = map.get_mut(&task_id) {
+                                            info.state = super::model::ExecutionState::Completed;
+                                        }
+                                    }
+
+                                    let _ = app.emit(
+                                        "download-complete",
+                                        serde_json::json!({
+                                            "id": task_id,
+                                            "outputFile": dest_path.to_string_lossy().to_string(),
+                                            "probe": Some(probe),
+                                        }),
+                                    );
+                                }
+                                Err(e) => {
+                                    if let Some(ref tdir) = temp_dir {
+                                        let _ = std::fs::remove_dir_all(tdir);
+                                    }
+                                    let _ = app.emit(
+                                        "download-error",
+                                        serde_json::json!({
+                                            "id": task_id,
+                                            "error": format!("err_move_output:{}", e),
+                                        }),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Err(probe_err) => {
+                        // ffprobe 校验失败，清理临时目录并报错
+                        if let Some(ref tdir) = temp_dir {
+                            let _ = std::fs::remove_dir_all(tdir);
+                        }
+                        let _ = app.emit(
+                            "download-error",
+                            serde_json::json!({
+                                "id": task_id,
+                                "error": format!("err_probe_failed:{}", probe_err),
+                            }),
+                        );
+                    }
+                }
+            } else {
+                if let Some(ref tdir) = temp_dir {
+                    let _ = std::fs::remove_dir_all(tdir);
+                }
+                let _ = app.emit(
+                    "download-error",
+                    serde_json::json!({
+                        "id": task_id,
+                        "error": "err_output_file_not_found",
+                    }),
+                );
+            }
+        } else if was_cancelled {
+            // 取消任务时确保清理临时文件与专属目录
             let _ = resolve_output_file(&processes, &task_id);
-            let error_msg = processes
-                .lock()
-                .ok()
-                .and_then(|map| map.get(&task_id).and_then(|info| info.last_error.clone()))
-                .unwrap_or_else(|| {
-                    status
-                        .as_ref()
-                        .map(|s| format!("err_exit_code:{}", s.code().unwrap_or(-1)))
-                        .unwrap_or_else(|e| e.to_string())
-                });
+            if let Some(ref tdir) = temp_dir {
+                let _ = std::fs::remove_dir_all(tdir);
+            }
+        } else {
+            // 失败时清理临时文件与专属目录
+            let _ = resolve_output_file(&processes, &task_id);
+            if let Some(ref tdir) = temp_dir {
+                let _ = std::fs::remove_dir_all(tdir);
+            }
+            let error_msg = last_error.unwrap_or_else(|| {
+                status
+                    .as_ref()
+                    .map(|s| format!("err_exit_code:{}", s.code().unwrap_or(-1)))
+                    .unwrap_or_else(|e| e.to_string())
+            });
             let _ = app.emit(
                 "download-error",
                 serde_json::json!({
@@ -265,12 +411,9 @@ fn resolve_output_file(
                     // 回退：从 stdout 解析的路径
                     if file.is_empty() {
                         file = info.output_files.last().cloned().unwrap_or_default();
-                        // 相对路径补全为绝对路径
+                        // 相对路径补全为任务隔离临时目录下的绝对路径
                         if !file.is_empty() && !std::path::Path::new(&file).is_absolute() {
-                            file = std::path::PathBuf::from(&info.download_dir)
-                                .join(&file)
-                                .to_string_lossy()
-                                .to_string();
+                            file = info.temp_dir.join(&file).to_string_lossy().to_string();
                         }
                     }
 

@@ -1,17 +1,16 @@
 <div align="center">
 
-<img src="./public/app-icon.svg" width="80" height="80" alt="yt-dlp GUI">
+<img src="./public/app-icon.svg" width="80" height="80" alt="EzDownload">
 
-# yt-dlp GUI
+# EzDownload
 
-A modern, beautiful desktop GUI for [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+A modern, high-performance desktop media downloader optimized for **Adobe Premiere Pro** workflows and macOS Apple Silicon (Mac mini M4) as well as Windows and Linux.
 
-Download videos from YouTube, Bilibili, Twitter/X and [1000+ websites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) with ease.
+Built with **Tauri 2 + Rust** and **Vue 3 + TypeScript**. Forked from and attributing [imsyy/yt-dlp-gui](https://github.com/imsyy/yt-dlp-gui).
 
-[![License](https://img.shields.io/github/license/imsyy/yt-dlp-gui?color=f0f0f0&labelColor=555555)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/imsyy/yt-dlp-gui?color=f0f0f0&labelColor=555555)](https://github.com/imsyy/yt-dlp-gui/releases)
-[![Stars](https://img.shields.io/github/stars/imsyy/yt-dlp-gui?style=flat&color=f0f0f0&labelColor=555555)](https://github.com/imsyy/yt-dlp-gui)
-[![Downloads](https://img.shields.io/github/downloads/imsyy/yt-dlp-gui/total?color=f0f0f0&labelColor=555555)](https://github.com/imsyy/yt-dlp-gui/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/rabbi696/EzDownload?color=f0f0f0&labelColor=555555)](https://github.com/rabbi696/EzDownload/releases)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/rabbi696/EzDownload/build.yml?branch=master)](https://github.com/rabbi696/EzDownload/actions)
 
 **English** | [简体中文](./README.zh-CN.md)
 
@@ -19,46 +18,45 @@ Download videos from YouTube, Bilibili, Twitter/X and [1000+ websites](https://g
 
 ---
 
-## Why yt-dlp GUI?
+## Why EzDownload?
 
-yt-dlp is powerful, but its command-line interface can be intimidating. **yt-dlp GUI** wraps it in a clean, native desktop app — no terminal needed.
+While yt-dlp is extremely capable, importing downloaded videos into non-linear video editors like **Adobe Premiere Pro** frequently causes issues:
+- Downloading 4K or 1440p YouTube video often yields **AV1 (`av01`)** or **VP9 (`vp09`)** streams in `.mp4` or `.webm` containers, which Premiere Pro cannot import natively without missing codec errors, black screens, or no audio.
+- YouTube caps **H.264 (`avc1`)** streams at 1080p, requiring intelligent format selection or lossless editing transcode.
+- File integrity checks often rely solely on file extensions rather than true stream inspection.
 
-- **Zero config to start** — paste a link, pick a quality, click download
-- **Native & lightweight** — built with Tauri 2 + Rust, ~10 MB installer, low memory usage
-- **Cross-platform** — Windows, macOS, and Linux
-- **Multilingual** — 7 languages with auto-detection
+**EzDownload solves this out of the box:**
+- **Premiere Ready (H.264 MP4) Preset**: Downloads true H.264 video with AAC audio merged into an MP4 container (`bv*[vcodec^=avc1]+ba[acodec^=mp4a]`).
+- **Codec Intelligence & Warnings**: Alerts you whenever a format uses AV1, VP9, or WebM, clearly explaining why (e.g. 4K stream capped in H.264) and offering one-click alternatives.
+- **Post-Download FFprobe Verification**: Runs JSON stream inspection on completed files. Files are **never** labeled Premiere Ready unless confirmed by stream metadata.
+- **One-Click Transcoding**: Converts incompatible media to **H.264 MP4** (`libx264` or hardware-accelerated `h264_videotoolbox` on macOS) or **Apple ProRes 422 LT MOV** (`prores_ks` + uncompressed PCM audio) for instant timeline drop-in.
+- **Robust Process Management**: Uses process hierarchy signals (`pkill -P <pid>`) preventing orphaned FFmpeg background tasks on cancellation.
+- **Apple Silicon Optimized**: Native macOS builds for Mac mini M4, MacBook Pro (M-series), and cross-platform compatibility for Windows and Linux.
 
 ## Features
 
-### Core
+### Premiere Pro Workflow
+- **Premiere Ready Default Preset**: Directly compatible timeline video.
+- **Codec Warning Banner**: Non-error, helpful guidance when AV1/VP9/WebM is selected.
+- **Resolution Capping Explanations**: Seamlessly switch to highest H.264 or download 4K original with auto-transcode.
+- **Verified Codec Badges**: Completed cards show ffprobe verified streams (`H.264 / AAC`, `ProRes 422 LT`, or `Incompatible`).
+- **In-App Transcoding**: Real-time transcode progress bar, cancel control, and auto-conversion triggers.
 
-- Paste a video URL and instantly preview title, thumbnail, duration, and available formats
-- Choose video quality, audio-only, or video-only downloads
-- Download queue with pause / resume / cancel controls
-- Real-time progress with speed and ETA display
-- Playlist support — download all or selected items
-- Configurable concurrent downloads and fragment threading
+### Core Downloader
+- Paste video URL and instantly preview title, thumbnail, duration, and formats.
+- Choose video quality, audio-only, or video-only downloads.
+- Download queue with pause / resume / cancel controls and multi-process concurrency limits.
+- Real-time progress with speed and ETA display.
+- Playlist support — download all or selected items.
+- Configurable concurrent fragments and fragment threading.
 
-### Toolbox
-
-- **Thumbnail Downloader** — browse and save all available cover images in any resolution
-- **Subtitle Extractor** — download subtitles in SRT / VTT / ASS / LRC, with bilingual merge support
-- **Live Chat Archiver** — extract YouTube live chat replay, filter with regex, export as JSON / CSV
-- **Plugin Manager** — install yt-dlp plugins (e.g. ChromeCookieUnlock) with one click
-- **Browser Extension** — companion Chrome / Edge extension that sends the page URL and required cookies to the app with one click ([details](#browser-extension))
-
-### Advanced
-
-- Custom filename templates with rich variables (title, author, date, resolution, etc.)
-- Time-based clip trimming — download only a segment of the video
-- Re-encode to MP4 / MKV / WebM / MP3 / AAC / FLAC and more
-- Embed subtitles, thumbnails, metadata, and chapters into the output file
-- SponsorBlock integration — automatically skip sponsored segments
-- Cookie authentication for age-restricted or members-only content
-- Proxy support (HTTP / SOCKS)
-- Download speed limiter
-- Light / Dark / Auto theme
-- Download completion notifications (in-app and/or system)
+### Toolbox & Extras
+- **Thumbnail Downloader** — browse and save all available cover images in any resolution.
+- **Subtitle Extractor** — download subtitles in SRT / VTT / ASS / LRC with bilingual merge support.
+- **Live Chat Archiver** — extract YouTube live chat replay, filter with regex, export as JSON / CSV.
+- **Plugin Manager** — install yt-dlp plugins with one click.
+- **Browser Extension** — companion helper extension for Chromium browsers.
+- Custom filename templates, time clip trimming, SponsorBlock, and proxy support.
 
 ## Screenshots
 
@@ -175,8 +173,8 @@ The extension is bundled with the app — no separate download required.
 
 ```bash
 # Clone the repository
-git clone https://github.com/imsyy/yt-dlp-gui.git
-cd yt-dlp-gui
+git clone https://github.com/rabbi696/EzDownload.git
+cd EzDownload
 
 # Install dependencies
 pnpm install
@@ -184,14 +182,20 @@ pnpm install
 # Run in development mode (Vite + Tauri)
 pnpm tauri:dev
 
+# Run tests
+pnpm test
+cargo test --manifest-path src-tauri/Cargo.toml
+
 # Build for production
 pnpm tauri:build
 ```
 
 ## Contributing
 
-Contributions are welcome! Feel free to open an [issue](https://github.com/imsyy/yt-dlp-gui/issues) or submit a pull request.
+Contributions are welcome! Feel free to open an [issue](https://github.com/rabbi696/EzDownload/issues) or submit a pull request.
 
-## License
+## License & Attribution
 
-[MIT](LICENSE) &copy; [imsyy](https://github.com/imsyy)
+[MIT](LICENSE) &copy; 2026 [rabbi696](https://github.com/rabbi696).
+
+Based on and forked from [yt-dlp-gui](https://github.com/imsyy/yt-dlp-gui) &copy; 2026 [imsyy](https://github.com/imsyy). All original copyrights and MIT terms preserved.

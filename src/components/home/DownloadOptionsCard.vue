@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { formatFileSize } from "@/utils/format";
-import { getCodecKey, getCodecLabel } from "@/utils/formats";
+import {
+  getCodecKey,
+  getCodecLabel,
+  isPremiereReadyCodec,
+  getCodecCompatibility,
+  checkH264ResolutionCapped,
+  findHighestH264Format,
+} from "@/utils/formats";
 import { useI18n } from "vue-i18n";
 import type { VideoFormat, VideoInfo } from "@/types";
 
@@ -21,9 +28,47 @@ const selectedVideoFormat = defineModel<string>("selectedVideoFormat", {
 const selectedAudioFormat = defineModel<string>("selectedAudioFormat", {
   required: true,
 });
+const premierePreset = defineModel<boolean>("premierePreset", {
+  default: false,
+});
+const autoConvertTarget = defineModel<"off" | "h264_mp4" | "prores_422_lt_mov">("autoConvertTarget", {
+  default: "off",
+});
 
 const selectedVideoCodec = ref("all");
 const selectedAudioCodec = ref("all");
+
+const currentSelectedVideoFormat = computed(() =>
+  props.videoFormats.find((f) => f.format_id === selectedVideoFormat.value),
+);
+
+const selectedFormatCompatibility = computed(() => {
+  if (downloadMode.value === "audio") return "ready";
+  if (!currentSelectedVideoFormat.value) return "unknown";
+  return getCodecCompatibility(
+    currentSelectedVideoFormat.value.vcodec,
+    currentSelectedVideoFormat.value.ext,
+  );
+});
+
+const h264CapInfo = computed(() => checkH264ResolutionCapped(props.videoFormats));
+
+const handleSwitchToH264 = () => {
+  const highestH264 = findHighestH264Format(props.videoFormats);
+  if (highestH264) {
+    selectedVideoFormat.value = highestH264.format_id;
+    selectedVideoCodec.value = "all";
+    autoConvertTarget.value = "off";
+  }
+};
+
+const handleSetAutoConvert = (target: "h264_mp4" | "prores_422_lt_mov") => {
+  if (autoConvertTarget.value === target) {
+    autoConvertTarget.value = "off";
+  } else {
+    autoConvertTarget.value = target;
+  }
+};
 
 const createCodecOptions = (formats: VideoFormat[]) => {
   const codecs = new Map<string, string>();
@@ -68,43 +113,53 @@ const isLive = computed(
 
 /** 视频格式下拉选项 */
 const videoFormatOptions = computed(() =>
-  filteredVideoFormats.value.map((f) => ({
-    label: [
-      `${f.height}p${f.fps ? ` ${f.fps}fps` : ""}`,
-      getCodecLabel(f.vcodec),
-      f.dynamic_range,
-      f.ext,
-      f.filesize || f.filesize_approx
-        ? formatFileSize(f.filesize || f.filesize_approx || 0)
-        : t("detail.unknownSize"),
-      `#${f.format_id}`,
-    ]
-      .filter(Boolean)
-      .join(" · "),
-    value: f.format_id,
-  })),
+  filteredVideoFormats.value.map((f) => {
+    const isReady = isPremiereReadyCodec(f.vcodec, f.ext);
+    const badge = isReady ? "✓ Premiere" : "";
+    return {
+      label: [
+        badge,
+        `${f.height}p${f.fps ? ` ${f.fps}fps` : ""}`,
+        getCodecLabel(f.vcodec),
+        f.dynamic_range,
+        f.ext,
+        f.filesize || f.filesize_approx
+          ? formatFileSize(f.filesize || f.filesize_approx || 0)
+          : t("detail.unknownSize"),
+        `#${f.format_id}`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      value: f.format_id,
+    };
+  }),
 );
 
 /** 音频格式下拉选项 */
 const audioFormatOptions = computed(() =>
-  filteredAudioFormats.value.map((f) => ({
-    label: [
-      f.language ? `[${f.language}]` : "",
-      f.format_note,
-      f.abr ? `${f.abr}kbps` : "",
-      getCodecLabel(f.acodec),
-      f.audio_channels ? `${f.audio_channels}ch` : "",
-      f.ext,
-      f.filesize || f.filesize_approx
-        ? formatFileSize(f.filesize || f.filesize_approx || 0)
-        : t("detail.unknownSize"),
-      `#${f.format_id}`,
-    ]
-      .filter(Boolean)
-      .filter((part, index, parts) => parts.indexOf(part) === index)
-      .join(" · "),
-    value: f.format_id,
-  })),
+  filteredAudioFormats.value.map((f) => {
+    const isAac = getCodecKey(f.acodec) === "aac";
+    const badge = isAac ? "✓ AAC" : "";
+    return {
+      label: [
+        badge,
+        f.language ? `[${f.language}]` : "",
+        f.format_note,
+        f.abr ? `${f.abr}kbps` : "",
+        getCodecLabel(f.acodec),
+        f.audio_channels ? `${f.audio_channels}ch` : "",
+        f.ext,
+        f.filesize || f.filesize_approx
+          ? formatFileSize(f.filesize || f.filesize_approx || 0)
+          : t("detail.unknownSize"),
+        `#${f.format_id}`,
+      ]
+        .filter(Boolean)
+        .filter((part, index, parts) => parts.indexOf(part) === index)
+        .join(" · "),
+      value: f.format_id,
+    };
+  }),
 );
 
 const handleVideoCodecChange = (value: string) => {
@@ -140,11 +195,161 @@ watch(
     }
   },
 );
+
+watch(
+  [() => premierePreset.value, () => selectedFormatCompatibility.value],
+  ([preset, compat]) => {
+    if (preset && compat === "convert_recommended" && autoConvertTarget.value === "off") {
+      autoConvertTarget.value = "h264_mp4";
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
   <n-card :title="$t('detail.downloadMethod')" size="small">
     <n-flex vertical :size="12">
+      <n-flex justify="space-between" align="center" style="padding: 2px 0">
+        <n-flex align="center" :size="8">
+          <n-tag :type="premierePreset ? 'success' : 'default'" size="small" round>
+            {{ $t("premiere.presetBadge") }}
+          </n-tag>
+          <n-text strong style="font-size: 13px">
+            {{ $t("premiere.presetTitle") }}
+          </n-text>
+        </n-flex>
+        <n-switch v-model:value="premierePreset" size="small" />
+      </n-flex>
+
+      <n-text v-if="premierePreset" depth="3" style="font-size: 12px; line-height: 1.4">
+        {{ $t("premiere.presetDesc") }}
+      </n-text>
+
+      <!-- Premiere Ready active: incompatible source stream warning and conversion selector -->
+      <n-alert
+        v-if="premierePreset && downloadMode !== 'audio' && selectedFormatCompatibility === 'convert_recommended'"
+        type="warning"
+        :bordered="false"
+      >
+        <template #header>
+          <span style="font-size: 13px; font-weight: 600">
+            {{ $t("premiere.fallbackChoiceTitle") }}
+          </span>
+        </template>
+        <n-flex vertical :size="6" style="font-size: 12px; margin-top: 2px">
+          <div>
+            {{
+              $t("premiere.fallbackChoiceDesc", {
+                codec: getCodecLabel(currentSelectedVideoFormat?.vcodec || ""),
+                ext: currentSelectedVideoFormat?.ext || "",
+              })
+            }}
+          </div>
+          <div v-if="!h264CapInfo.highestH264Id" style="color: var(--n-warning-color, #f0a020); font-weight: 500">
+            {{ $t("premiere.noH264StreamAlert") }}
+          </div>
+          <div v-else-if="h264CapInfo.isCapped" style="color: var(--n-text-color-depth-2)">
+            {{
+              $t("premiere.h264CappedNotice", {
+                h264Res: `${h264CapInfo.h264MaxHeight}p`,
+                maxRes: `${h264CapInfo.overallMaxHeight}p`,
+                codec: h264CapInfo.overallCodec,
+              })
+            }}
+          </div>
+          <n-flex :size="8" align="center" style="margin-top: 4px" wrap>
+            <n-button
+              v-if="h264CapInfo.highestH264Id"
+              size="tiny"
+              secondary
+              type="primary"
+              @click="handleSwitchToH264"
+            >
+              {{ $t("premiere.switchToH264", { res: `${h264CapInfo.h264MaxHeight}p` }) }}
+            </n-button>
+            <n-button
+              size="tiny"
+              :type="autoConvertTarget === 'h264_mp4' ? 'success' : 'default'"
+              secondary
+              @click="handleSetAutoConvert('h264_mp4')"
+            >
+              {{ $t("premiere.autoConvertH264") }}
+              {{ autoConvertTarget === "h264_mp4" ? " ✓" : "" }}
+            </n-button>
+            <n-button
+              size="tiny"
+              :type="autoConvertTarget === 'prores_422_lt_mov' ? 'success' : 'default'"
+              secondary
+              @click="handleSetAutoConvert('prores_422_lt_mov')"
+            >
+              {{ $t("premiere.autoConvertProres") }}
+              {{ autoConvertTarget === "prores_422_lt_mov" ? " ✓" : "" }}
+            </n-button>
+          </n-flex>
+        </n-flex>
+      </n-alert>
+
+      <n-alert
+        v-if="!premierePreset && downloadMode !== 'audio' && selectedFormatCompatibility === 'convert_recommended'"
+        type="warning"
+        :bordered="false"
+      >
+        <template #header>
+          <span style="font-size: 13px; font-weight: 600">
+            {{ $t("premiere.warningTitle") }}
+          </span>
+        </template>
+        <n-flex vertical :size="6" style="font-size: 12px; margin-top: 2px">
+          <div>
+            {{
+              $t("premiere.warningDesc", {
+                codec: getCodecLabel(currentSelectedVideoFormat?.vcodec || ""),
+                ext: currentSelectedVideoFormat?.ext || "",
+              })
+            }}
+          </div>
+          <div v-if="h264CapInfo.isCapped" style="color: var(--n-text-color-depth-2)">
+            {{
+              $t("premiere.h264CappedNotice", {
+                h264Res: `${h264CapInfo.h264MaxHeight}p`,
+                maxRes: `${h264CapInfo.overallMaxHeight}p`,
+                codec: h264CapInfo.overallCodec,
+              })
+            }}
+          </div>
+          <n-flex :size="8" align="center" style="margin-top: 4px" wrap>
+            <n-button
+              v-if="h264CapInfo.highestH264Id"
+              size="tiny"
+              secondary
+              type="primary"
+              @click="handleSwitchToH264"
+            >
+              {{ $t("premiere.switchToH264", { res: `${h264CapInfo.h264MaxHeight}p` }) }}
+            </n-button>
+            <n-button
+              size="tiny"
+              :type="autoConvertTarget === 'h264_mp4' ? 'success' : 'default'"
+              secondary
+              @click="handleSetAutoConvert('h264_mp4')"
+            >
+              {{ $t("premiere.autoConvertH264") }}
+              {{ autoConvertTarget === "h264_mp4" ? " ✓" : "" }}
+            </n-button>
+            <n-button
+              size="tiny"
+              :type="autoConvertTarget === 'prores_422_lt_mov' ? 'success' : 'default'"
+              secondary
+              @click="handleSetAutoConvert('prores_422_lt_mov')"
+            >
+              {{ $t("premiere.autoConvertProres") }}
+              {{ autoConvertTarget === "prores_422_lt_mov" ? " ✓" : "" }}
+            </n-button>
+          </n-flex>
+        </n-flex>
+      </n-alert>
+
       <n-radio-group v-model:value="downloadMode" size="small">
         <n-radio-button value="default">{{ $t("common.default") }}</n-radio-button>
         <n-radio-button value="video">{{ $t("detail.videoOnly") }}</n-radio-button>

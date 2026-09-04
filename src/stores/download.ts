@@ -8,7 +8,7 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import localforage from "localforage";
-import type { DownloadTask } from "@/types";
+import type { DownloadTask, MediaProbeResult, TranscodeTarget } from "@/types";
 import { useSettingStore } from "@/stores/setting";
 import i18n from "@/locales";
 
@@ -120,6 +120,11 @@ export const useDownloadStore = defineStore("download", () => {
         }
         if (!Array.isArray(task.logs)) task.logs = [];
         if (!task.createdAt) task.createdAt = Date.now();
+        if (task.isConverting) {
+          task.isConverting = false;
+          task.convertPercent = 0;
+          task.convertSpeed = "";
+        }
       }
 
       // Filter out completed tasks whose output files no longer exist
@@ -213,21 +218,42 @@ export const useDownloadStore = defineStore("download", () => {
       }
     });
 
-    await listen<{ id: string; outputFile: string }>("download-complete", (event) => {
-      const task = tasks.value.find((t) => t.id === event.payload.id);
-      if (task) {
-        task.status = "completed";
-        task.percent = 100;
-        task.speed = "";
-        if (event.payload.outputFile) task.outputFile = event.payload.outputFile;
-        notify(
-          i18n.global.t("downloads.notifyComplete"),
-          task.title || i18n.global.t("downloads.notifyCompleteBody"),
-        );
-      }
-      updateTaskbarProgress();
-      tryStartNext();
-    });
+    await listen<{ id: string; outputFile: string; probe?: MediaProbeResult }>(
+      "download-complete",
+      (event) => {
+        const task = tasks.value.find((t) => t.id === event.payload.id);
+        if (task) {
+          task.status = "completed";
+          task.percent = 100;
+          task.speed = "";
+          if (event.payload.outputFile) task.outputFile = event.payload.outputFile;
+          if (event.payload.probe) task.probe = event.payload.probe;
+          notify(
+            i18n.global.t("downloads.notifyComplete"),
+            task.title || i18n.global.t("downloads.notifyCompleteBody"),
+          );
+
+          // Auto-convert if enabled and probe shows incompatible
+          const settingStore = useSettingStore();
+          const autoTarget = task.params?.autoConvertTarget || settingStore.autoConvertIncompatible;
+          if (
+            autoTarget &&
+            autoTarget !== "off" &&
+            task.probe &&
+            !task.probe.isPremiereReady &&
+            task.outputFile
+          ) {
+            convertTask(
+              task.id,
+              autoTarget === "prores_422_lt_mov" ? "prores_422_lt_mov" : "h264_mp4",
+              settingStore.keepOriginalAfterConversion,
+            );
+          }
+        }
+        updateTaskbarProgress();
+        tryStartNext();
+      },
+    );
 
     await listen<{ id: string; error: string }>("download-error", (event) => {
       const task = tasks.value.find((t) => t.id === event.payload.id);
@@ -238,6 +264,48 @@ export const useDownloadStore = defineStore("download", () => {
       }
       updateTaskbarProgress();
       tryStartNext();
+    });
+
+    await listen<{ id: string; percent: number; timeSeconds: number; speed: string }>(
+      "transcode-progress",
+      (event) => {
+        const task = tasks.value.find((t) => t.id === event.payload.id);
+        if (task) {
+          task.isConverting = true;
+          task.convertPercent = event.payload.percent;
+          task.convertSpeed = event.payload.speed;
+        }
+      },
+    );
+
+    await listen<{ id: string; outputFile: string; probe: MediaProbeResult }>(
+      "transcode-complete",
+      (event) => {
+        const task = tasks.value.find((t) => t.id === event.payload.id);
+        if (task) {
+          task.isConverting = false;
+          task.convertPercent = 100;
+          task.convertSpeed = "";
+          if (event.payload.outputFile) task.outputFile = event.payload.outputFile;
+          if (event.payload.probe) task.probe = event.payload.probe;
+          notify(
+            i18n.global.t("premiere.transcodeComplete"),
+            task.title || i18n.global.t("premiere.transcodeCompleteBody"),
+          );
+        }
+      },
+    );
+
+    await listen<{ id: string; error: string }>("transcode-error", (event) => {
+      const task = tasks.value.find((t) => t.id === event.payload.id);
+      if (task) {
+        task.isConverting = false;
+        task.convertPercent = 0;
+        task.convertSpeed = "";
+        window.$message?.error(
+          `${i18n.global.t("premiere.transcodeFailed")}: ${event.payload.error}`,
+        );
+      }
     });
   };
 
@@ -328,6 +396,60 @@ export const useDownloadStore = defineStore("download", () => {
     );
   };
 
+  /** 开始将任务输出文件转码为 Premiere 兼容格式 */
+  const convertTask = async (
+    id: string,
+    target: TranscodeTarget = "h264_mp4",
+    keepOriginal?: boolean,
+  ) => {
+    const task = tasks.value.find((t) => t.id === id);
+    if (!task || !task.outputFile) return;
+
+    const settingStore = useSettingStore();
+    const keep =
+      keepOriginal !== undefined
+        ? keepOriginal
+        : settingStore.keepOriginalAfterConversion;
+
+    task.isConverting = true;
+    task.convertPercent = 0;
+    task.convertSpeed = "";
+    task.convertTarget = target;
+
+    try {
+      await invoke("convert_video_for_premiere", {
+        params: {
+          taskId: id,
+          inputPath: task.outputFile,
+          target,
+          keepOriginal: keep,
+          useHardwareAcceleration: settingStore.useHardwareAcceleration,
+        },
+      });
+    } catch (e: any) {
+      task.isConverting = false;
+      task.convertPercent = 0;
+      task.convertSpeed = "";
+      window.$message?.error(
+        `${i18n.global.t("premiere.transcodeFailed")}: ${e?.message || e}`,
+      );
+    }
+  };
+
+  /** 取消转码 */
+  const cancelConvert = async (id: string) => {
+    const task = tasks.value.find((t) => t.id === id);
+    if (!task) return;
+    try {
+      await invoke("cancel_transcode", { taskId: id });
+    } catch {
+      // Ignore
+    }
+    task.isConverting = false;
+    task.convertPercent = 0;
+    task.convertSpeed = "";
+  };
+
   return {
     tasks,
     loaded,
@@ -340,5 +462,7 @@ export const useDownloadStore = defineStore("download", () => {
     retryTask,
     removeTask,
     clearFinished,
+    convertTask,
+    cancelConvert,
   };
 });

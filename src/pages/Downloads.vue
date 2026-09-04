@@ -4,7 +4,7 @@ import { revealItemInDir, openUrl } from "@tauri-apps/plugin-opener";
 import { invoke } from "@tauri-apps/api/core";
 import { useDownloadStore } from "@/stores/download";
 import { useI18n } from "vue-i18n";
-import type { DownloadTask } from "@/types";
+import type { DownloadTask, TranscodeTarget } from "@/types";
 
 const { t } = useI18n();
 const downloadStore = useDownloadStore();
@@ -293,6 +293,21 @@ const handleClearFinished = () => {
     },
   });
 };
+
+const convertOptions = () => [
+  {
+    label: t("premiere.autoConvertH264"),
+    key: "h264_mp4",
+  },
+  {
+    label: t("premiere.autoConvertProres"),
+    key: "prores_422_lt_mov",
+  },
+];
+
+const handleConvertSelect = (taskId: string, key: string) => {
+  downloadStore.convertTask(taskId, key as TranscodeTarget);
+};
 </script>
 
 <template>
@@ -511,6 +526,28 @@ const handleClearFinished = () => {
                     <n-tag size="small" :bordered="false" round type="info">
                       {{ task.formatLabel }}
                     </n-tag>
+                    <template v-if="task.probe">
+                      <n-tag
+                        v-if="task.probe.isPremiereReady"
+                        size="small"
+                        round
+                        type="success"
+                        :bordered="false"
+                        :title="task.probe.compatibilityLabel"
+                      >
+                        ✓ {{ task.probe.videoCodecTag || task.probe.videoCodec || 'H.264' }} / {{ task.probe.audioCodec || 'AAC' }}
+                      </n-tag>
+                      <n-tag
+                        v-else
+                        size="small"
+                        round
+                        type="warning"
+                        :bordered="false"
+                        :title="task.probe.incompatibilityReason || task.probe.compatibilityLabel"
+                      >
+                        ⚠️ {{ task.probe.videoCodec || task.probe.formatName }} ({{ $t("premiere.incompatibleBadge") }})
+                      </n-tag>
+                    </template>
                     <n-ellipsis :line-clamp="1" :tooltip="false" class="task-title">
                       {{ task.title }}
                     </n-ellipsis>
@@ -521,6 +558,28 @@ const handleClearFinished = () => {
                     :status="progressStatus(task)"
                     style="width: 100%"
                   />
+                  <div v-if="task.isConverting" style="margin: 6px 0">
+                    <n-flex align="center" justify="space-between" style="margin-bottom: 4px">
+                      <n-tag size="small" type="info" round :bordered="false">
+                        {{ $t("premiere.converting") }}
+                        {{ task.convertTarget === 'prores_422_lt_mov' ? '(ProRes)' : '(H.264)' }}
+                      </n-tag>
+                      <n-text depth="3" class="task-stat" style="font-size: 12px">
+                        {{ (task.convertPercent || 0).toFixed(1) }}%
+                        {{ task.convertSpeed ? `· ${task.convertSpeed}` : '' }}
+                      </n-text>
+                      <n-button size="tiny" secondary type="error" @click="downloadStore.cancelConvert(task.id)">
+                        {{ $t("common.cancel") }}
+                      </n-button>
+                    </n-flex>
+                    <n-progress
+                      :percentage="task.convertPercent || 0"
+                      :show-indicator="false"
+                      status="info"
+                      processing
+                      style="width: 100%"
+                    />
+                  </div>
                   <n-flex align="center" justify="space-between">
                     <n-flex align="center">
                       <n-tag size="small" :bordered="false" round :type="statusType(task)">
@@ -532,8 +591,30 @@ const handleClearFinished = () => {
                         </n-text>
                         <n-text depth="3">{{ task.percent.toFixed(1) }}%</n-text>
                       </template>
+                      <template v-else-if="task.probe">
+                        <n-text v-if="task.probe.width && task.probe.height" depth="3" class="task-stat">
+                          {{ task.probe.width }}x{{ task.probe.height }}
+                        </n-text>
+                      </template>
                     </n-flex>
                     <n-flex align="center" size="small">
+                      <n-dropdown
+                        v-if="task.status === 'completed' && !task.isConverting && task.outputFile"
+                        :options="convertOptions()"
+                        @select="(key: string) => handleConvertSelect(task.id, key)"
+                      >
+                        <n-button
+                          size="tiny"
+                          strong
+                          secondary
+                          :type="task.probe && !task.probe.isPremiereReady ? 'warning' : 'default'"
+                        >
+                          <template #icon>
+                            <n-icon size="16"><icon-mdi-cog-outline /></n-icon>
+                          </template>
+                          {{ $t("premiere.convertAction") }}
+                        </n-button>
+                      </n-dropdown>
                       <n-button size="tiny" strong secondary @click="handleOpenSource(task.url)">
                         <template #icon>
                           <n-icon size="16"><icon-mdi-open-in-new /></n-icon>

@@ -9,16 +9,20 @@
 
 mod download;
 mod external_tools;
+pub(crate) mod probe;
 mod proxy;
 pub(crate) mod support;
 mod toolbox;
+pub(crate) mod transcode;
 mod video;
 
 // 使用 glob 导出：Tauri generate_handler! 宏需要访问 __cmd__ 隐藏项
 pub use download::*;
 pub use external_tools::*;
+pub use probe::*;
 pub use proxy::*;
 pub use toolbox::*;
+pub use transcode::*;
 pub use video::*;
 
 // ========== 平台常量 ==========

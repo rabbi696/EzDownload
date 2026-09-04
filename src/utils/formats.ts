@@ -7,6 +7,7 @@ export const getCodecKey = (codec: string): string => {
   if (/^(av01|av1)/.test(normalized)) return "av1";
   if (/^(vp09|vp9)/.test(normalized)) return "vp9";
   if (/^vp8/.test(normalized)) return "vp8";
+  if (/^(prores|apch|apcn|apcs|apco|ap4h|ap4x)/.test(normalized)) return "prores";
   if (/^(mp4a|aac)/.test(normalized)) return "aac";
   if (/^(opus)/.test(normalized)) return "opus";
   if (/^(vorbis)/.test(normalized)) return "vorbis";
@@ -18,6 +19,7 @@ export const getCodecKey = (codec: string): string => {
 
 const CODEC_LABELS: Record<string, string> = {
   h264: "H.264",
+  prores: "Apple ProRes",
   hevc: "H.265 / HEVC",
   av1: "AV1",
   vp9: "VP9",
@@ -34,6 +36,64 @@ const CODEC_LABELS: Record<string, string> = {
 export const getCodecLabel = (codec: string): string => {
   const key = getCodecKey(codec);
   return CODEC_LABELS[key] || key.toUpperCase();
+};
+
+export const PREMIERE_READY_SELECTOR =
+  "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/b[vcodec^=avc1]";
+
+export type CodecCompatibility = "ready" | "convert_recommended" | "unknown";
+
+export const isPremiereReadyCodec = (
+  vcodec?: string | null,
+  container?: string | null,
+): boolean => {
+  if (!vcodec) return false;
+  const key = getCodecKey(vcodec);
+  const isWebm = (container || "").toLowerCase().includes("webm");
+  if (isWebm) return false;
+  return key === "h264" || key === "prores";
+};
+
+export const getCodecCompatibility = (
+  vcodec?: string | null,
+  container?: string | null,
+): CodecCompatibility => {
+  if (isPremiereReadyCodec(vcodec, container)) {
+    return "ready";
+  }
+  const isWebm = (container || "").toLowerCase().includes("webm");
+  const key = vcodec ? getCodecKey(vcodec) : "";
+  if (isWebm || key === "av1" || key === "vp9" || key === "vp8") {
+    return "convert_recommended";
+  }
+  return "unknown";
+};
+
+export const findHighestH264Format = (formats: VideoFormat[]): VideoFormat | undefined => {
+  const h264List = formats.filter(
+    (f) => getCodecKey(f.vcodec) === "h264" && !f.ext.toLowerCase().includes("webm"),
+  );
+  return h264List.sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+};
+
+export const findHighestFormat = (formats: VideoFormat[]): VideoFormat | undefined => {
+  return [...formats].sort((a, b) => (b.height || 0) - (a.height || 0))[0];
+};
+
+export const checkH264ResolutionCapped = (formats: VideoFormat[]) => {
+  const highestH264 = findHighestH264Format(formats);
+  const highestOverall = findHighestFormat(formats);
+  const h264MaxHeight = highestH264?.height || 0;
+  const overallMaxHeight = highestOverall?.height || 0;
+  const isCapped = overallMaxHeight > h264MaxHeight && h264MaxHeight > 0;
+  return {
+    isCapped,
+    h264MaxHeight,
+    overallMaxHeight,
+    overallCodec: highestOverall ? getCodecLabel(highestOverall.vcodec) : "",
+    highestH264Id: highestH264?.format_id,
+    highestOverallId: highestOverall?.format_id,
+  };
 };
 
 const audioRoleRank = (format: VideoFormat): number => {

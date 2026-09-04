@@ -1,11 +1,11 @@
 //! 直播聊天下载与解析。
 
+#[cfg(target_os = "windows")]
+use crate::commands::CREATE_NO_WINDOW;
 use crate::{
     commands::{support::append_cookie_proxy_args, support::extract_ytdlp_error},
     utils,
 };
-#[cfg(target_os = "windows")]
-use crate::commands::CREATE_NO_WINDOW;
 use serde_json::Value;
 use tauri::AppHandle;
 
@@ -175,6 +175,11 @@ pub async fn tool_fetch_live_chat(
         .env("PYTHONIOENCODING", "utf-8");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.as_std_mut().process_group(0);
+    }
 
     let output = match cmd.output().await {
         Ok(output) => output,

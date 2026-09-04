@@ -3,22 +3,40 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionState {
+    Running,
+    Completed,
+    #[allow(dead_code)]
+    Failed,
+    Cancelled,
+}
+
 /// 下载进程信息（运行时状态）
 pub struct DownloadProcessInfo {
     /// 进程 PID
     pub pid: u32,
+    /// 任务执行状态
+    pub state: ExecutionState,
     /// 是否已被用户取消
     pub cancelled: bool,
     /// 从 stdout 解析到的输出文件路径（作为备选）
     pub output_files: Vec<String>,
     /// 下载目录
     pub download_dir: String,
+    /// 任务专属隔离临时目录
+    pub temp_dir: std::path::PathBuf,
     /// 临时文件路径，用于存储 --print-to-file 写出的最终文件路径
     pub filepath_file: Option<String>,
     /// 时间裁剪的片段时长（秒），用于计算 ffmpeg 处理进度
     pub clip_duration: Option<f64>,
     /// yt-dlp 输出的最后一条 ERROR，用于替代无意义的退出码错误。
     pub last_error: Option<String>,
+    /// 是否使用了 Premiere Ready 预设
+    #[allow(dead_code)]
+    pub premiere_preset: bool,
+    /// 是否禁止覆盖已有同名文件
+    pub no_overwrites: bool,
 }
 
 /// 下载状态管理（全局共享）
@@ -78,4 +96,7 @@ pub struct DownloadParams {
     pub playlist_items: Option<String>,
     /// 从开始下载直播流（--live-from-start）
     pub live_from_start: bool,
+    /// 是否使用 Premiere Ready 预设
+    #[serde(default)]
+    pub premiere_preset: bool,
 }

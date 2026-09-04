@@ -33,7 +33,7 @@ pub fn run() {
             }
             // 将深链接 URL 转发到前端
             for arg in &args {
-                if arg.starts_with("ytdlp-gui://") {
+                if arg.starts_with("ezdownload://") || arg.starts_with("ytdlp-gui://") {
                     let _ = app.emit("deep-link-url", arg.clone());
                 }
             }
@@ -58,6 +58,7 @@ pub fn run() {
         .manage(app::commands::CliRequestState::new(initial_request))
         .manage(app::browser_bridge::BrowserBridgeState::default())
         .manage(commands::DownloadState::default())
+        .manage(commands::TranscodeState::default())
         .invoke_handler(tauri::generate_handler![
             app::commands::update_tray_menu,
             app::commands::reveal_browser_extension,
@@ -85,6 +86,9 @@ pub fn run() {
             commands::pause_download,
             commands::resume_download,
             commands::cancel_download,
+            commands::verify_media_file,
+            commands::convert_video_for_premiere,
+            commands::cancel_transcode,
             commands::check_files_exist,
             commands::delete_file,
             commands::tool_download_thumbnail,

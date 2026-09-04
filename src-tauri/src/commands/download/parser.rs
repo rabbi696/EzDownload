@@ -214,7 +214,8 @@ mod tests {
 
     #[test]
     fn parse_ffmpeg_speed_na_returns_empty() {
-        let line = "frame=    0 fps=0.0 q=0.0 size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A";
+        let line =
+            "frame=    0 fps=0.0 q=0.0 size=       0kB time=00:00:00.00 bitrate=N/A speed=N/A";
         assert!(parse_ffmpeg_speed(line).is_empty());
     }
 

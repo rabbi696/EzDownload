@@ -1,15 +1,15 @@
 [package]
-name = "yt-dlp-gui"
+name = "ezdownload"
 version = "0.7.0"
-description = "A modern GUI for yt-dlp"
-authors = ["imsyy"]
+description = "A modern, reliable media downloader for macOS and desktop platforms"
+authors = ["rabbi696", "imsyy"]
 edition = "2021"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "yt_dlp_gui_lib"
+name = "ezdownload_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -36,3 +36,6 @@ which = "7"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

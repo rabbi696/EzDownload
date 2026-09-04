@@ -136,7 +136,7 @@ const handleCliOpenRequest = (request: CliOpenRequest) => {
 };
 
 const handleBrowserExtensionImport = (imported: BrowserExtensionImport) => {
-  console.log("[YDL GUI] browser extension import received:", imported);
+  console.log("[EzDownload] browser extension import received:", imported);
   if (imported.cookieFile) {
     settingStore.cookieFile = imported.cookieFile;
     settingStore.cookieMode = "file";
@@ -209,7 +209,7 @@ onMounted(async () => {
         <div class="header-side">
           <div class="logo" @click="router.push({ name: 'home' })">
             <img src="/app-icon.svg" alt="" class="logo-img" />
-            <span class="logo-text">YDL GUI</span>
+            <span class="logo-text">EzDownload</span>
           </div>
         </div>
         <div class="header-nav">
@@ -247,7 +247,7 @@ onMounted(async () => {
             quaternary
             circle
             tag="a"
-            href="https://github.com/imsyy/yt-dlp-gui"
+            href="https://github.com/rabbi696/EzDownload"
             target="_blank"
           >
             <template #icon>
@@ -311,12 +311,12 @@ onMounted(async () => {
             <n-button
               text
               tag="a"
-              href="https://github.com/imsyy/yt-dlp-gui"
+              href="https://github.com/rabbi696/EzDownload"
               target="_blank"
               size="tiny"
               style="font-size: 12px"
             >
-              YDL GUI
+              EzDownload
             </n-button>
           </n-text>
         </n-flex>

@@ -6,9 +6,10 @@ mod files;
 mod lifecycle;
 mod model;
 mod output;
-mod parser;
+pub(crate) mod parser;
 
 pub use control::*;
 pub use files::*;
 pub use lifecycle::*;
 pub use model::DownloadState;
+pub(crate) use output::atomic_move;

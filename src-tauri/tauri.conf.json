@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "YDL GUI",
+  "productName": "EzDownload",
   "version": "0.7.0",
-  "identifier": "com.imsyy.yt-dlp-gui",
+  "identifier": "com.rabbi696.ezdownload",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:15688",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "YDL GUI",
+        "title": "EzDownload",
         "width": 800,
         "height": 600,
         "visible": false
@@ -24,7 +24,7 @@
     "trayIcon": {
       "iconPath": "icons/icon.png",
       "iconAsTemplate": true,
-      "tooltip": "YDL GUI"
+      "tooltip": "EzDownload"
     }
   },
   "bundle": {
@@ -45,13 +45,11 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["ytdlp-gui"]
+        "schemes": ["ezdownload", "ytdlp-gui"]
       }
     },
     "updater": {
-      "endpoints": [
-        "https://github.com/imsyy/yt-dlp-gui/releases/latest/download/latest.json"
-      ],
+      "endpoints": [],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJENzM3NUZDRDIzNDM3MzcKUldRM056VFMvSFZ6dldFQXBCT0JXcmNLRHRmd0tKNE1ucEFnWTl2WHZOcHFSZ205QnFFNjRibUMK",
       "windows": {
         "installMode": "passive"

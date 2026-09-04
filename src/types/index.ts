@@ -83,6 +83,34 @@ export interface ExtraOptions {
   ffmpegArgs: string;
 }
 
+export interface MediaProbeResult {
+  path: string;
+  exists: boolean;
+  formatName: string;
+  containerExtension: string;
+  videoCodec: string | null;
+  videoCodecTag: string | null;
+  audioCodec: string | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  durationSeconds: number | null;
+  fileSizeBytes: number | null;
+  isPremiereReady: boolean;
+  compatibilityLabel: string;
+  incompatibilityReason: string | null;
+}
+
+export type TranscodeTarget = "h264_mp4" | "prores_422_lt_mov";
+
+export interface TranscodeParams {
+  taskId: string;
+  inputPath: string;
+  target: TranscodeTarget;
+  keepOriginal: boolean;
+  useHardwareAcceleration: boolean;
+}
+
 export interface DownloadTaskParams {
   url: string;
   downloadDir: string;
@@ -113,6 +141,10 @@ export interface DownloadTaskParams {
   playlistItems: string | null;
   /** 从开始下载直播流 */
   liveFromStart: boolean;
+  /** Premiere Ready H.264 MP4 预设 */
+  premierePreset?: boolean;
+  /** 不兼容格式时自动转换目标 */
+  autoConvertTarget?: "off" | "h264_mp4" | "prores_422_lt_mov";
 }
 
 export interface DownloadTask {
@@ -140,6 +172,11 @@ export interface DownloadTask {
   outputFile?: string;
   createdAt: number;
   params: DownloadTaskParams;
+  probe?: MediaProbeResult;
+  isConverting?: boolean;
+  convertPercent?: number;
+  convertSpeed?: string;
+  convertTarget?: TranscodeTarget;
 }
 
 export interface FetchedVideoData {
@@ -174,6 +211,10 @@ export interface PendingItem extends FetchedVideoData {
   selectedSubtitles: string[];
   /** 是否从开始下载直播流（--live-from-start） */
   liveFromStart: boolean;
+  /** 是否使用 Premiere Ready 预设 */
+  premierePreset: boolean;
+  /** 不兼容格式时自动转换目标 */
+  autoConvertTarget?: "off" | "h264_mp4" | "prores_422_lt_mov";
 }
 
 export interface PlaylistEntry {

@@ -192,6 +192,8 @@ const handleDownload = async () => {
           v-model:download-mode="activeItem.downloadMode"
           v-model:selected-video-format="activeItem.selectedVideoFormat"
           v-model:selected-audio-format="activeItem.selectedAudioFormat"
+          v-model:premiere-preset="activeItem.premierePreset"
+          v-model:auto-convert-target="activeItem.autoConvertTarget"
           :video-formats="activeItem.videoFormats"
           :audio-formats="activeItem.audioFormats"
           :video-info="activeItem.videoInfo as VideoInfo"
