@@ -78,7 +78,7 @@ yt-dlp 功能强大，但命令行操作门槛较高。**yt-dlp GUI** 将其封�
 
 ### 下载安装
 
-前往 [**Releases**](https://github.com/imsyy/yt-dlp-gui/releases) 下载对应平台的安装包：
+前往 [**Releases**](https://github.com/rabbi696/EzDownload/releases) 下载对应平台的安装包：
 
 | 平台 | 文件 |
 |------|------|

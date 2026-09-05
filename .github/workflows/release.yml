@@ -72,7 +72,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           generateReleaseNotes: true
-          includeUpdaterJson: true
+          includeUpdaterJson: false
           args: --target ${{ matrix.target }}
 
       - name: Upload artifacts (Windows)

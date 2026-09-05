@@ -76,7 +76,7 @@ While yt-dlp is extremely capable, importing downloaded videos into non-linear v
 
 ### Download
 
-Grab the latest release for your platform from [**Releases**](https://github.com/imsyy/yt-dlp-gui/releases):
+Grab the latest release for your platform from [**Releases**](https://github.com/rabbi696/EzDownload/releases):
 
 | Platform | File |
 |----------|------|
